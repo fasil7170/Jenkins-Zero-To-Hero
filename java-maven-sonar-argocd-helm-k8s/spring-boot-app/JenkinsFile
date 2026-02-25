@@ -25,7 +25,7 @@ spec:
     }
 
     environment {
-        DOCKER_IMAGE = "abhishekf5/ultimate-cicd:${BUILD_NUMBER}"
+        DOCKER_IMAGE = "fazil2664/ultimate-cicd:${BUILD_NUMBER}"
     }
 
     stages {
@@ -72,15 +72,21 @@ spec:
                         passwordVariable: 'DOCKER_PASSWORD'
                     )]) {
                         sh '''
-                            echo "Starting Docker daemon..."
-                            # Wait for Docker daemon to be ready
+                            echo "Waiting for Docker daemon to start..."
                             timeout=30
-                            while (! docker info > /dev/null 2>&1) && [ $timeout -gt 0 ]; do
-                                echo "Waiting for Docker daemon..."
+                            until docker info > /dev/null 2>&1 || [ $timeout -le 0 ]; do
+                                echo "Docker daemon not ready, waiting..."
                                 sleep 2
                                 timeout=$((timeout - 2))
                             done
-                            docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
+
+                            if [ $timeout -le 0 ]; then
+                                echo "Docker daemon failed to start"
+                                exit 1
+                            fi
+
+                            echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+
                             docker build -t ${DOCKER_IMAGE} java-maven-sonar-argocd-helm-k8s/spring-boot-app
                             docker push ${DOCKER_IMAGE}
                         '''
