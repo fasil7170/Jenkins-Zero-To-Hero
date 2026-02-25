@@ -1,7 +1,8 @@
 pipeline {
     agent {
         kubernetes {
-            label 'ultimate-cicd-pod'
+            label 'ultimate-cicd-dind'
+            defaultContainer 'jnlp'
             yaml """
 apiVersion: v1
 kind: Pod
@@ -13,9 +14,11 @@ spec:
     - cat
     tty: true
   - name: docker
-    image: docker:24.0-cli
+    image: docker:24.0-dind
+    securityContext:
+      privileged: true
     command:
-    - cat
+    - dockerd-entrypoint.sh
     tty: true
 """
         }
@@ -69,7 +72,14 @@ spec:
                         passwordVariable: 'DOCKER_PASSWORD'
                     )]) {
                         sh '''
-                            echo "Logging into Docker..."
+                            echo "Starting Docker daemon..."
+                            # Wait for Docker daemon to be ready
+                            timeout=30
+                            while (! docker info > /dev/null 2>&1) && [ $timeout -gt 0 ]; do
+                                echo "Waiting for Docker daemon..."
+                                sleep 2
+                                timeout=$((timeout - 2))
+                            done
                             docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
                             docker build -t ${DOCKER_IMAGE} java-maven-sonar-argocd-helm-k8s/spring-boot-app
                             docker push ${DOCKER_IMAGE}
