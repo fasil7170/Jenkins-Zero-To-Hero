@@ -25,8 +25,8 @@ spec:
     }
 
     environment {
-        DOCKER_IMAGE = "abhishekf5/ultimate-cicd:${BUILD_NUMBER}"
-        DOCKER_CACHE_IMAGE = "abhishekf5/ultimate-cicd-cache:latest"
+        DOCKER_IMAGE = "fazil2664/ultimate-cicd:${BUILD_NUMBER}"
+        DOCKER_CACHE_IMAGE = "fazil2664/ultimate-cicd-cache:latest"
         DOCKER_CONFIG = "/kaniko/.docker"
         SONAR_URL = "http://192.168.0.100:9000"
         GIT_REPO_NAME = "Jenkins-Zero-To-Hero"
