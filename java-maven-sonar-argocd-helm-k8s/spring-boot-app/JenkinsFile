@@ -13,9 +13,7 @@ spec:
     tty: true
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
-    command:
-    - cat
-    tty: true
+    # use default entrypoint; do not override command or tty
 """
     }
   }
