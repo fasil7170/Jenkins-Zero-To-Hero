@@ -1,105 +1,45 @@
-pipeline {
-  agent {
-    kubernetes {
-      yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: maven
-    image: maven:3.9.6-eclipse-temurin-17
-    command:
-    - cat
-    tty: true
+Started by user Jenkins Admin
+Obtained java-maven-sonar-argocd-helm-k8s/spring-boot-app/JenkinsFile from git https://github.com/fasil7170/Jenkins-Zero-To-Hero
+[Pipeline] Start of Pipeline
+[Pipeline] podTemplate
+[Pipeline] {
+[Pipeline] node
+Still waiting to schedule task
+‘ultimate-demo-10-2zbdw-71ntt-b60jl’ is offline
+Created Pod: kubernetes jenkins/ultimate-demo-10-2zbdw-71ntt-b60jl
+[PodInfo] jenkins/ultimate-demo-10-2zbdw-71ntt-b60jl
+	Container [jnlp] waiting [ContainerCreating] No message
+	Container [kaniko] waiting [ContainerCreating] No message
+	Container [maven] waiting [ContainerCreating] No message
+	Pod [Pending][ContainersNotReady] containers with unready status: [maven kaniko jnlp]
+[PodInfo] jenkins/ultimate-demo-10-2zbdw-71ntt-b60jl
+	Container [jnlp] waiting [ContainerCreating] No message
+	Container [kaniko] waiting [ContainerCreating] No message
+	Container [maven] waiting [ContainerCreating] No message
+	Pod [Pending][ContainersNotReady] containers with unready status: [maven kaniko jnlp]
+[PodInfo] jenkins/ultimate-demo-10-2zbdw-71ntt-b60jl
+	Container [kaniko] terminated [StartError] failed to create containerd task: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: "/busybox/sh": stat /busybox/sh: no such file or directory
+	Pod [Running][ContainersNotReady] containers with unready status: [kaniko]
+jenkins/ultimate-demo-10-2zbdw-71ntt-b60jl Container kaniko was terminated.
 
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:latest
-    command:
-    - /busybox/sh
-    tty: true
-"""
-    }
-  }
+- jnlp -- running
+-----Logs-------------
 
-  environment {
-    DOCKER_IMAGE = "fazil2664/ultimate-cicd:${BUILD_NUMBER}"
-  }
 
-  stages {
+- kaniko -- terminated (128)
+-----Logs-------------
 
-    stage('Checkout') {
-      steps {
-        echo "Code checkout done"
-        // git branch: 'main', url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
-      }
-    }
 
-    stage('Build and Test') {
-      steps {
-        container('maven') {
-          sh '''
-            cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
-            mvn clean package
-          '''
-        }
-      }
-    }
+- maven -- running
+-----Logs-------------
 
-    stage('Static Code Analysis') {
-      steps {
-        container('maven') {
-          withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
-            sh '''
-              cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
-              mvn sonar:sonar \
-              -Dsonar.login=$SONAR_AUTH_TOKEN \
-              -Dsonar.host.url=http://192.168.0.100:9000
-            '''
-          }
-        }
-      }
-    }
-
-    stage('Build and Push Docker Image') {
-      steps {
-        container('kaniko') {
-          withCredentials([usernamePassword(
-            credentialsId: 'dockerhub-creds',
-            usernameVariable: 'DOCKER_USERNAME',
-            passwordVariable: 'DOCKER_PASSWORD'
-          )]) {
-            sh '''
-              mkdir -p /kaniko/.docker
-              echo "{\"auths\":{\"https://index.docker.io/v1/\":{\"username\":\"$DOCKER_USERNAME\",\"password\":\"$DOCKER_PASSWORD\"}}}" > /kaniko/.docker/config.json
-
-              /kaniko/executor \
-                --context `pwd`/java-maven-sonar-argocd-helm-k8s/spring-boot-app \
-                --destination $DOCKER_IMAGE
-            '''
-          }
-        }
-      }
-    }
-
-    stage('Update Deployment File') {
-      steps {
-        container('maven') {
-          withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
-            sh '''
-              git config user.email "rkftrip@gmail.com"
-              git config user.name "fasil7170"
-
-              sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" \
-              java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-
-              git add .
-              git commit -m "Update image to ${BUILD_NUMBER}"
-              git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero HEAD:main
-            '''
-          }
-        }
-      }
-    }
-
-  }
-}
+[PodInfo] jenkins/ultimate-demo-10-2zbdw-71ntt-b60jl
+	Container [kaniko] terminated [StartError] failed to create containerd task: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: "/busybox/sh": stat /busybox/sh: no such file or directory
+	Pod [Running][ContainersNotReady] containers with unready status: [kaniko]
+[Pipeline] // node
+[Pipeline] }
+[Pipeline] // podTemplate
+[Pipeline] End of Pipeline
+Queue task was cancelled
+org.jenkinsci.plugins.workflow.actions.ErrorAction$ErrorId: ac1d8298-c947-4385-bd59-70ff27713c62
+Finished: ABORTED
