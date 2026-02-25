@@ -8,32 +8,46 @@ spec:
   containers:
   - name: maven
     image: maven:3.9.6-eclipse-temurin-17
+    command:
+    - cat
+    tty: true
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
+    command:
+    - cat
+    tty: true
 """
     }
   }
 
   environment {
+    APP_DIR = "java-maven-sonar-argocd-helm-k8s/spring-boot-app"
+    DEPLOY_DIR = "java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests"
     DOCKER_IMAGE = "abhishekf5/ultimate-cicd:${BUILD_NUMBER}"
+    SONAR_URL = "http://192.168.0.100:9000"
+  }
+
+  options {
+    timestamps()
+    buildDiscarder(logRotator(numToKeepStr: '10'))
   }
 
   stages {
 
     stage('Checkout') {
       steps {
-        echo "Code checkout done"
-        // git branch: 'main', url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
+        echo "Checking out code..."
+        checkout scm
       }
     }
 
     stage('Build and Test') {
       steps {
         container('maven') {
-          sh '''
-            cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
-            mvn clean package
-          '''
+          sh """
+            cd ${APP_DIR}
+            mvn clean package -B
+          """
         }
       }
     }
@@ -42,18 +56,18 @@ spec:
       steps {
         container('maven') {
           withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
-            sh '''
-              cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
+            sh """
+              cd ${APP_DIR}
               mvn sonar:sonar \
                 -Dsonar.login=$SONAR_AUTH_TOKEN \
-                -Dsonar.host.url=http://192.168.0.100:9000
-            '''
+                -Dsonar.host.url=${SONAR_URL}
+            """
           }
         }
       }
     }
 
-    stage('Build and Push Docker Image with Kaniko') {
+    stage('Build and Push Docker Image') {
       steps {
         container('kaniko') {
           withCredentials([usernamePassword(
@@ -61,17 +75,15 @@ spec:
             usernameVariable: 'DOCKER_USERNAME',
             passwordVariable: 'DOCKER_PASSWORD'
           )]) {
-            sh '''
+            sh """
               mkdir -p /kaniko/.docker
               echo "{\\"auths\\":{\\"https://index.docker.io/v1/\\":{\\"username\\":\\"$DOCKER_USERNAME\\",\\"password\\":\\"$DOCKER_PASSWORD\\"}}}" > /kaniko/.docker/config.json
 
               /kaniko/executor \
-                --context=java-maven-sonar-argocd-helm-k8s/spring-boot-app \
-                --dockerfile=java-maven-sonar-argocd-helm-k8s/spring-boot-app/Dockerfile \
-                --destination=${DOCKER_IMAGE} \
-                --insecure \
-                --skip-tls-verify
-            '''
+                --context=${APP_DIR} \
+                --dockerfile=${APP_DIR}/Dockerfile \
+                --destination=${DOCKER_IMAGE}
+            """
           }
         }
       }
@@ -81,21 +93,31 @@ spec:
       steps {
         container('maven') {
           withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
-            sh '''
+            sh """
               git config user.email "rkftrip@gmail.com"
               git config user.name "fasil7170"
 
-              sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" \
-              java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+              git pull --rebase https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero HEAD:main || true
 
-              git add .
-              git commit -m "Update image to ${BUILD_NUMBER}"
+              sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" ${DEPLOY_DIR}/deployment.yml
+
+              git add ${DEPLOY_DIR}/deployment.yml
+              git commit -m "Update image to ${BUILD_NUMBER}" || echo "No changes to commit"
               git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero HEAD:main
-            '''
+            """
           }
         }
       }
     }
 
+  }
+
+  post {
+    success {
+      echo "Pipeline completed successfully ✅"
+    }
+    failure {
+      echo "Pipeline failed ❌"
+    }
   }
 }
