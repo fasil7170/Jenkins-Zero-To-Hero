@@ -28,10 +28,9 @@ spec:
 
   stages {
 
-    stage('Checkout Code') {
+    stage('Checkout') {
       steps {
-        git branch: 'main',
-            url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
+        git branch: 'main', url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
       }
     }
 
@@ -115,11 +114,7 @@ spec:
   }
 
   post {
-    success {
-      echo "✅ Pipeline completed successfully"
-    }
-    failure {
-      echo "❌ Pipeline failed"
-    }
+    success { echo "✅ Pipeline completed successfully" }
+    failure { echo "❌ Pipeline failed" }
   }
 }
