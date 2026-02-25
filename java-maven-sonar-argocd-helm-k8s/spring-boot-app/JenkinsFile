@@ -17,7 +17,7 @@ spec:
     - name: workspace-volume
       mountPath: /home/jenkins/agent
   - name: kaniko
-    image: gcr.io/kaniko-project/executor:latest
+    image: gcr.io/kaniko-project/executor:v1.12.0
     command:
     - cat
     tty: true
@@ -27,6 +27,8 @@ spec:
   volumes:
   - name: workspace-volume
     emptyDir: {}
+  imagePullSecrets:
+  - name: my-registry-secret
 """
         }
     }
