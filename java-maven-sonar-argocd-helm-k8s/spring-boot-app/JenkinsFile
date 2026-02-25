@@ -9,14 +9,11 @@ spec:
   containers:
   - name: maven
     image: maven:3.9.6-eclipse-temurin-17
-    command: ["sleep"]
-    args: ["99d"]
+    command: ["cat"]
     tty: true
 
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
-    command: ["sleep"]
-    args: ["99d"]
     tty: true
 """
     }
@@ -64,7 +61,7 @@ spec:
       }
     }
 
-    stage('Build & Push Image') {
+    stage('Build & Push Docker Image') {
       steps {
         container('kaniko') {
           withCredentials([usernamePassword(
@@ -74,7 +71,6 @@ spec:
           )]) {
             sh """
               mkdir -p /kaniko/.docker
-
               echo '{
                 "auths": {
                   "${DOCKER_REGISTRY}": {
