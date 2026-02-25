@@ -15,7 +15,7 @@ spec:
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
     command:
-    - cat
+    - /busybox/cat
     tty: true
 """
     }
@@ -30,6 +30,8 @@ spec:
     stage('Checkout') {
       steps {
         echo "Code checkout done"
+        // Optionally, uncomment to pull code via Git:
+        // git branch: 'main', url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
       }
     }
 
