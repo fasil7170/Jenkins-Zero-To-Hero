@@ -7,15 +7,9 @@ kind: Pod
 spec:
   containers:
   - name: maven
-    image: maven:3.9.6-eclipse-temurin-1
-    command:
-    - cat
-    tty: true
+    image: maven:3.9.6-eclipse-temurin-17
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
-    command:
-    - cat
-    tty: true
 """
     }
   }
