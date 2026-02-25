@@ -1,110 +1,43 @@
-pipeline {
-    agent {
-        kubernetes {
-            label 'maven-kaniko-agent'
-            defaultContainer 'maven'
-            yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: maven
-    image: maven:3.9.2-eclipse-temurin-17
-    command:
-    - cat
-    tty: true
-    volumeMounts:
-    - name: workspace-volume
-      mountPath: /home/jenkins/agent
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:v1.12.0
-    volumeMounts:
-    - name: workspace-volume
-      mountPath: /workspace
-  volumes:
-  - name: workspace-volume
-    emptyDir: {}
-  imagePullSecrets:
-  - name: my-registry-secret
-"""
+podTemplate(
+    label: 'kaniko-maven-pod',
+    containers: [
+        containerTemplate(
+            name: 'jnlp',
+            image: 'jenkins/inbound-agent:latest',
+            args: '${computer.jnlpmac} ${computer.name}'
+        ),
+        containerTemplate(
+            name: 'maven',
+            image: 'maven:3.9.1-openjdk-17',
+            ttyEnabled: true,
+            command: 'cat'
+        ),
+        containerTemplate(
+            name: 'kaniko',
+            image: 'gcr.io/kaniko-project/executor:latest',
+            ttyEnabled: true,
+            command: '/busybox/sh',
+            args: '-c'
+        )
+    ],
+    imagePullSecrets: ['regcred'], // <-- Add your registry secret here
+    volumes: [
+        hostPathVolume(hostPath: '/var/run/docker.sock', mountPath: '/var/run/docker.sock')
+    ]
+) {
+    node('kaniko-maven-pod') {
+        container('kaniko') {
+            sh """
+                /kaniko/executor \\
+                  --dockerfile=Dockerfile \\
+                  --destination=myregistry/ultimate-demo:latest \\
+                  --insecure \\
+                  --insecure-pull \\
+                  --skip-tls-verify
+            """
+        }
+        container('maven') {
+            sh 'mvn clean package'
         }
     }
-
-    environment {
-        SONAR_URL = "http://192.168.0.100:9000"
-        DOCKER_IMAGE = "abhishekf5/ultimate-cicd:${BUILD_NUMBER}"
-        DOCKER_REPO = "abhishekf5/ultimate-cicd"
-    }
-
-    stages {
-
-        stage('Checkout') {
-            steps {
-                checkout([$class: 'GitSCM',
-                          branches: [[name: 'main']],
-                          userRemoteConfigs: [[url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git']]])
-            }
-        }
-
-        stage('Build and Test') {
-            steps {
-                container('maven') {
-                    dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
-                        sh 'mvn clean package'
-                    }
-                }
-            }
-        }
-
-        stage('Static Code Analysis') {
-            steps {
-                container('maven') {
-                    withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
-                        dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
-                            sh 'mvn sonar:sonar -Dsonar.host.url=${SONAR_URL} -Dsonar.login=$SONAR_AUTH_TOKEN'
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Build and Push Docker Image') {
-            steps {
-                container('kaniko') {
-                    withCredentials([usernamePassword(credentialsId: 'docker-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                        sh '''
-                            /kaniko/executor \
-                                --dockerfile=/workspace/java-maven-sonar-argocd-helm-k8s/spring-boot-app/Dockerfile \
-                                --context=/workspace/java-maven-sonar-argocd-helm-k8s/spring-boot-app \
-                                --destination=${DOCKER_IMAGE} \
-                                --insecure \
-                                --skip-tls-verify \
-                                --username=${DOCKER_USER} \
-                                --password=${DOCKER_PASS}
-                        '''
-                    }
-                }
-            }
-        }
-
-        stage('Update Deployment File') {
-            environment {
-                GIT_REPO_NAME = "Jenkins-Zero-To-Hero"
-                GIT_USER_NAME = "iam-veeramalla"
-            }
-            steps {
-                withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
-                    sh '''
-                        git config user.email "abhishek.xyz@gmail.com"
-                        git config user.name "Abhishek Veeramalla"
-                        sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-                        git add java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-                        git commit -m "Update deployment image to version ${BUILD_NUMBER}" || echo "No changes to commit"
-                        git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
-                    '''
-                }
-            }
-        }
-
-    } // stages
 }
