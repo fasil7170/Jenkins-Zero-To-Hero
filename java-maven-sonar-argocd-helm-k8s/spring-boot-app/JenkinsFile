@@ -16,21 +16,22 @@ spec:
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
     command:
-    - cat
+    - /busybox/cat
     tty: true
 """
     }
   }
 
   environment {
-    APP_DIR       = "java-maven-sonar-argocd-helm-k8s/spring-boot-app"
-    DOCKER_IMAGE  = "fazil2664/ultimate-cicd:${BUILD_NUMBER}"
+    APP_DIR = "java-maven-sonar-argocd-helm-k8s/spring-boot-app"
+    MANIFEST_DIR = "java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests"
+    DOCKER_IMAGE = "fazil2664/ultimate-cicd:${BUILD_NUMBER}"
     DOCKER_REGISTRY = "https://index.docker.io/v1/"
   }
 
   stages {
 
-    // ----------------------------------------------------
+    // ------------------------------------------------
     stage('Checkout Code') {
       steps {
         git branch: 'main',
@@ -38,19 +39,19 @@ spec:
       }
     }
 
-    // ----------------------------------------------------
-    stage('Build and Unit Test') {
+    // ------------------------------------------------
+    stage('Build & Unit Test') {
       steps {
         container('maven') {
           sh """
             cd ${APP_DIR}
-            mvn clean package -DskipTests=false
+            mvn clean package
           """
         }
       }
     }
 
-    // ----------------------------------------------------
+    // ------------------------------------------------
     stage('Static Code Analysis - SonarQube') {
       steps {
         container('maven') {
@@ -66,8 +67,8 @@ spec:
       }
     }
 
-    // ----------------------------------------------------
-    stage('Build and Push Docker Image (Kaniko)') {
+    // ------------------------------------------------
+    stage('Build & Push Image using Kaniko') {
       steps {
         container('kaniko') {
           withCredentials([usernamePassword(
@@ -98,7 +99,7 @@ spec:
       }
     }
 
-    // ----------------------------------------------------
+    // ------------------------------------------------
     stage('Update Kubernetes Deployment Manifest') {
       steps {
         container('maven') {
@@ -108,7 +109,7 @@ spec:
               git config user.name "fasil7170"
 
               sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" \
-              java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+              ${MANIFEST_DIR}/deployment.yml
 
               git add .
               git commit -m "Update image tag to ${BUILD_NUMBER}" || echo "No changes to commit"
@@ -124,10 +125,10 @@ spec:
 
   post {
     success {
-      echo "Pipeline executed successfully 🚀"
+      echo "✅ CI/CD Pipeline completed successfully!"
     }
     failure {
-      echo "Pipeline failed ❌"
+      echo "❌ Pipeline failed. Check logs."
     }
   }
 }
