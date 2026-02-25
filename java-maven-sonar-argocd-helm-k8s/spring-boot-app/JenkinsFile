@@ -1,54 +1,81 @@
-podTemplate(
-    label: 'ultimate-demo',
-    containers: [
-        containerTemplate(
-            name: 'jnlp',
-            image: 'jenkins/inbound-agent:latest',
-            ttyEnabled: true
-        ),
-        containerTemplate(
-            name: 'maven',
-            image: 'maven:3.9.6-eclipse-temurin-17',
-            command: 'cat',       // keeps container alive
-            ttyEnabled: true
-        ),
-        containerTemplate(
-            name: 'kaniko',
-            image: 'gcr.io/kaniko-project/executor:latest',
-            ttyEnabled: true       // keep container alive for executor
-        )
-    ]
-) {
-    node('ultimate-demo') {
-        stage('Checkout') {
-            checkout scm
+pipeline {
+    agent {
+        kubernetes {
+            label 'ultimate-demo'
+            defaultContainer 'jnlp'
+            yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: jnlp
+    image: jenkins/inbound-agent:latest
+    tty: true
+  - name: maven
+    image: maven:3.9.6-eclipse-temurin-17-jdk
+    command:
+      - cat
+    tty: true
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:latest
+    command:
+      - sh
+      - -c
+      - "while true; do sleep 30; done;"
+    tty: true
+  volumes:
+  - name: kaniko-cache
+    emptyDir: {}
+"""
         }
+    }
 
-        stage('Build & Test') {
-            container('maven') {
-                sh 'mvn clean install'
+    environment {
+        IMAGE_NAME = "yourdockerhubusername/demo-app:latest"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                container('jnlp') {
+                    git url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero/', branch: 'main'
+                }
             }
         }
 
-        stage('Static Code Analysis') {
-            container('maven') {
-                sh 'mvn sonar:sonar -Dsonar.projectKey=demo-project -Dsonar.host.url=$SONAR_URL -Dsonar.login=$SONAR_TOKEN'
+        stage('Build') {
+            steps {
+                container('maven') {
+                    sh 'mvn clean package -DskipTests'
+                }
             }
         }
 
         stage('Build & Push Docker Image') {
-            container('kaniko') {
-                withCredentials([usernamePassword(credentialsId: 'docker-hub', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+            steps {
+                container('kaniko') {
                     sh """
                     /kaniko/executor \\
-                        --dockerfile=Dockerfile \\
-                        --context=dir://\$WORKSPACE \\
-                        --destination=\$DOCKER_USERNAME/ultimate-demo:latest \\
-                        --skip-tls-verify \\
-                        --cache=true
+                        --dockerfile=\$WORKSPACE/spring-boot-app/Dockerfile \\
+                        --context=dir://\$WORKSPACE/spring-boot-app \\
+                        --destination=$IMAGE_NAME \\
+                        --cache=true \\
+                        --cache-dir=/kaniko
                     """
                 }
             }
+        }
+    }
+
+    post {
+        always {
+            echo "Pipeline finished!"
+        }
+        success {
+            echo "Pipeline completed successfully!"
+        }
+        failure {
+            echo "Pipeline failed!"
         }
     }
 }
