@@ -1,81 +1,78 @@
 pipeline {
     agent {
-        kubernetes {
-            label 'ultimate-demo'
-            defaultContainer 'jnlp'
-            yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: jnlp
-    image: jenkins/inbound-agent:latest
-    tty: true
-  - name: maven
-    image: maven:3.9.6-eclipse-temurin-17-jdk
-    command:
-      - cat
-    tty: true
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:latest
-    command:
-      - sh
-      - -c
-      - "while true; do sleep 30; done;"
-    tty: true
-  volumes:
-  - name: kaniko-cache
-    emptyDir: {}
-"""
+        docker {
+            image 'gcr.io/kaniko-project/executor:latest'
+            args '-v /kaniko/.docker:/kaniko/.docker' // Kaniko expects a config.json here for credentials
         }
     }
 
     environment {
-        IMAGE_NAME = "yourdockerhubusername/demo-app:latest"
+        DOCKER_IMAGE = "abhishekf5/ultimate-cicd:${BUILD_NUMBER}"
+        DOCKER_CONFIG = "/kaniko/.docker/" // required by Kaniko
+        REGISTRY_CREDENTIALS = credentials('docker-cred')
+        SONAR_URL = "http://34.201.116.83:9000"
+        GIT_REPO_NAME = "Jenkins-Zero-To-Hero"
+        GIT_USER_NAME = "iam-veeramalla"
     }
 
     stages {
         stage('Checkout') {
             steps {
-                container('jnlp') {
-                    git url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero/', branch: 'main'
-                }
+                sh 'echo passed'
+                // git branch: 'main', url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
             }
         }
 
-        stage('Build') {
+        stage('Build and Test') {
             steps {
-                container('maven') {
-                    sh 'mvn clean package -DskipTests'
-                }
+                sh 'ls -ltr'
+                sh 'cd java-maven-sonar-argocd-helm-k8s/spring-boot-app && mvn clean package'
             }
         }
 
-        stage('Build & Push Docker Image') {
+        stage('Static Code Analysis') {
             steps {
-                container('kaniko') {
-                    sh """
-                    /kaniko/executor \\
-                        --dockerfile=\$WORKSPACE/spring-boot-app/Dockerfile \\
-                        --context=dir://\$WORKSPACE/spring-boot-app \\
-                        --destination=$IMAGE_NAME \\
-                        --cache=true \\
-                        --cache-dir=/kaniko
-                    """
+                withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
+                    sh '''
+                        cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
+                        mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}
+                    '''
                 }
             }
         }
-    }
 
-    post {
-        always {
-            echo "Pipeline finished!"
+        stage('Build and Push Docker Image (Kaniko)') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'docker-cred', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
+                    sh '''
+                        echo "{\"auths\":{\"https://index.docker.io/v1/\":{\"username\":\"$DOCKER_USERNAME\",\"password\":\"$DOCKER_PASSWORD\"}}}" > /kaniko/.docker/config.json
+
+                        /kaniko/executor \
+                            --context java-maven-sonar-argocd-helm-k8s/spring-boot-app \
+                            --dockerfile java-maven-sonar-argocd-helm-k8s/spring-boot-app/Dockerfile \
+                            --destination ${DOCKER_IMAGE} \
+                            --insecure \
+                            --skip-tls-verify
+                    '''
+                }
+            }
         }
-        success {
-            echo "Pipeline completed successfully!"
-        }
-        failure {
-            echo "Pipeline failed!"
+
+        stage('Update Deployment File') {
+            steps {
+                withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
+                    sh '''
+                        git config user.email "abhishek.xyz@gmail.com"
+                        git config user.name "Abhishek Veeramalla"
+
+                        sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+
+                        git add java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+                        git commit -m "Update deployment image to version ${BUILD_NUMBER}"
+                        git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
+                    '''
+                }
+            }
         }
     }
 }
