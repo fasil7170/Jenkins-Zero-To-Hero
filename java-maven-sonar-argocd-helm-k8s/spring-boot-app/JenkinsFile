@@ -14,7 +14,6 @@ spec:
 
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
-    tty: true
 """
     }
   }
@@ -28,7 +27,7 @@ spec:
     stage('Checkout') {
       steps {
         echo "Code checkout done"
-        // Uncomment to pull code from GitHub if needed:
+        // Optionally uncomment to pull from Git:
         // git branch: 'main', url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
       }
     }
@@ -51,8 +50,8 @@ spec:
             sh '''
               cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
               mvn sonar:sonar \
-              -Dsonar.login=$SONAR_AUTH_TOKEN \
-              -Dsonar.host.url=http://192.168.0.100:9000
+                -Dsonar.login=$SONAR_AUTH_TOKEN \
+                -Dsonar.host.url=http://192.168.0.100:9000
             '''
           }
         }
@@ -73,7 +72,8 @@ spec:
 
               /kaniko/executor \
                 --context `pwd`/java-maven-sonar-argocd-helm-k8s/spring-boot-app \
-                --destination $DOCKER_IMAGE
+                --destination ${DOCKER_IMAGE} \
+                --verbosity info
             '''
           }
         }
