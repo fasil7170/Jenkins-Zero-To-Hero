@@ -15,8 +15,6 @@ spec:
 
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
-    command:
-    - /busybox/cat
     tty: true
 """
     }
@@ -49,7 +47,7 @@ spec:
       }
     }
 
-    stage('Static Code Analysis - SonarQube') {
+    stage('Static Code Analysis') {
       steps {
         container('maven') {
           withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_TOKEN')]) {
@@ -64,7 +62,7 @@ spec:
       }
     }
 
-    stage('Build & Push Image (Kaniko)') {
+    stage('Build & Push Image') {
       steps {
         container('kaniko') {
           withCredentials([usernamePassword(
@@ -95,7 +93,7 @@ spec:
       }
     }
 
-    stage('Update Kubernetes Manifest') {
+    stage('Update Deployment Manifest') {
       steps {
         container('maven') {
           withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
@@ -120,10 +118,10 @@ spec:
 
   post {
     success {
-      echo "✅ Pipeline completed successfully!"
+      echo "✅ Pipeline completed successfully"
     }
     failure {
-      echo "❌ Pipeline failed. Check logs."
+      echo "❌ Pipeline failed"
     }
   }
 }
