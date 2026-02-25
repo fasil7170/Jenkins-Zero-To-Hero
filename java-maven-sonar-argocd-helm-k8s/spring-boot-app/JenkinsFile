@@ -15,7 +15,7 @@ spec:
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
     command:
-    - /busybox/cat
+    - /busybox/sh
     tty: true
 """
     }
@@ -30,7 +30,6 @@ spec:
     stage('Checkout') {
       steps {
         echo "Code checkout done"
-        // Optionally, uncomment to pull code via Git:
         // git branch: 'main', url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
       }
     }
@@ -69,7 +68,6 @@ spec:
             usernameVariable: 'DOCKER_USERNAME',
             passwordVariable: 'DOCKER_PASSWORD'
           )]) {
-
             sh '''
               mkdir -p /kaniko/.docker
               echo "{\"auths\":{\"https://index.docker.io/v1/\":{\"username\":\"$DOCKER_USERNAME\",\"password\":\"$DOCKER_PASSWORD\"}}}" > /kaniko/.docker/config.json
@@ -89,7 +87,7 @@ spec:
           withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
             sh '''
               git config user.email "rkftrip@gmail.com"
-              git config user.name "Abhishek Veeramalla"
+              git config user.name "fasil7170"
 
               sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" \
               java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
