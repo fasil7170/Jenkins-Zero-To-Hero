@@ -6,14 +6,44 @@ apiVersion: v1
 kind: Pod
 spec:
   containers:
-  - name: maven
-    image: maven:3.9.6-eclipse-temurin-17
-    command:
-    - cat
-    tty: true
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:latest
-    # use default entrypoint; do not override command or tty
+    # Jenkins agent container (JNLP)
+    - name: jnlp
+      image: jenkins/inbound-agent:latest
+      args: ["\\${computer.jnlpmac}", "\\${computer.name}"]
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "256Mi"
+        limits:
+          cpu: "500m"
+          memory: "512Mi"
+
+    # Maven container
+    - name: maven
+      image: maven:3.9.6-eclipse-temurin-17
+      command:
+        - cat
+      tty: true
+      resources:
+        requests:
+          cpu: "200m"
+          memory: "512Mi"
+        limits:
+          cpu: "1"
+          memory: "1Gi"
+
+    # Kaniko container
+    - name: kaniko
+      image: gcr.io/kaniko-project/executor:latest
+      resources:
+        requests:
+          cpu: "200m"
+          memory: "512Mi"
+        limits:
+          cpu: "1"
+          memory: "1Gi"
+
+  restartPolicy: Never
 """
     }
   }
