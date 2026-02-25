@@ -1,76 +1,89 @@
 pipeline {
-    agent any
+    agent {
+        kubernetes {
+            label 'maven-kaniko-agent'
+            defaultContainer 'maven'
+            yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: maven
+    image: maven:3.9.2-eclipse-temurin-17
+    command:
+    - cat
+    tty: true
+    volumeMounts:
+    - name: workspace-volume
+      mountPath: /home/jenkins/agent
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:latest
+    command:
+    - cat
+    tty: true
+    volumeMounts:
+    - name: workspace-volume
+      mountPath: /workspace
+  volumes:
+  - name: workspace-volume
+    emptyDir: {}
+"""
+        }
+    }
 
     environment {
         SONAR_URL = "http://192.168.0.100:9000"
         DOCKER_IMAGE = "abhishekf5/ultimate-cicd:${BUILD_NUMBER}"
-        DOCKER_REGISTRY = "index.docker.io"
         DOCKER_REPO = "abhishekf5/ultimate-cicd"
     }
 
     stages {
+
         stage('Checkout') {
             steps {
-                sh 'echo passed'
-                // git branch: 'main', url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
+                checkout([$class: 'GitSCM',
+                          branches: [[name: 'main']],
+                          userRemoteConfigs: [[url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git']]])
             }
         }
 
         stage('Build and Test') {
             steps {
-                sh 'ls -ltr'
-                sh 'cd java-maven-sonar-argocd-helm-k8s/spring-boot-app && mvn clean package'
+                container('maven') {
+                    dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
+                        sh 'mvn clean package'
+                    }
+                }
             }
         }
 
         stage('Static Code Analysis') {
             steps {
-                withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
-                    sh '''
-                        cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
-                        mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}
-                    '''
+                container('maven') {
+                    withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
+                        dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
+                            sh 'mvn sonar:sonar -Dsonar.host.url=${SONAR_URL} -Dsonar.login=$SONAR_AUTH_TOKEN'
+                        }
+                    }
                 }
             }
         }
 
-        stage('Build and Push Docker Image with Kaniko') {
+        stage('Build and Push Docker Image') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'docker-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh '''
-                        # Prepare Kaniko build context
-                        BUILD_CONTEXT=$(pwd)/java-maven-sonar-argocd-helm-k8s/spring-boot-app
-                        
-                        # Run Kaniko container to build and push image
-                        kubectl run kaniko-build --rm -i --tty --restart=Never \
-                        --image=gcr.io/kaniko-project/executor:latest \
-                        --overrides='{
-                            "apiVersion": "v1",
-                            "spec": {
-                                "containers": [{
-                                    "name": "kaniko",
-                                    "image": "gcr.io/kaniko-project/executor:latest",
-                                    "args": [
-                                        "--dockerfile=/workspace/Dockerfile",
-                                        "--context=/workspace/",
-                                        "--destination='${DOCKER_IMAGE}'",
-                                        "--insecure",
-                                        "--skip-tls-verify"
-                                    ],
-                                    "env": [
-                                        {"name": "DOCKER_USERNAME", "value": "'${DOCKER_USER}'"},
-                                        {"name": "DOCKER_PASSWORD", "value": "'${DOCKER_PASS}'"}
-                                    ],
-                                    "volumeMounts": [
-                                        {"name": "workspace-volume", "mountPath": "/workspace"}
-                                    ]
-                                }],
-                                "volumes": [
-                                    {"name": "workspace-volume", "hostPath": {"path": "'${BUILD_CONTEXT}'"}}
-                                ]
-                            }
-                        }'
-                    '''
+                container('kaniko') {
+                    withCredentials([usernamePassword(credentialsId: 'docker-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh '''
+                            /kaniko/executor \
+                                --dockerfile=/workspace/java-maven-sonar-argocd-helm-k8s/spring-boot-app/Dockerfile \
+                                --context=/workspace/java-maven-sonar-argocd-helm-k8s/spring-boot-app \
+                                --destination=${DOCKER_IMAGE} \
+                                --insecure \
+                                --skip-tls-verify \
+                                --username=${DOCKER_USER} \
+                                --password=${DOCKER_PASS}
+                        '''
+                    }
                 }
             }
         }
@@ -85,14 +98,14 @@ pipeline {
                     sh '''
                         git config user.email "abhishek.xyz@gmail.com"
                         git config user.name "Abhishek Veeramalla"
-                        BUILD_NUMBER=${BUILD_NUMBER}
                         sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
                         git add java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-                        git commit -m "Update deployment image to version ${BUILD_NUMBER}"
+                        git commit -m "Update deployment image to version ${BUILD_NUMBER}" || echo "No changes to commit"
                         git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
                     '''
                 }
             }
         }
-    }
+
+    } // stages
 }
