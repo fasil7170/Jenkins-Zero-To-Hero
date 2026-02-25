@@ -6,75 +6,35 @@ apiVersion: v1
 kind: Pod
 spec:
   containers:
-    # Jenkins agent container (JNLP)
-    - name: jnlp
-      image: jenkins/inbound-agent:latest
-      args: ["\\${computer.jnlpmac}", "\\${computer.name}"]
-      resources:
-        requests:
-          cpu: "100m"
-          memory: "256Mi"
-        limits:
-          cpu: "500m"
-          memory: "512Mi"
-
-    # Maven container
-    - name: maven
-      image: maven:3.9.6-eclipse-temurin-17
-      command:
-        - cat
-      tty: true
-      resources:
-        requests:
-          cpu: "200m"
-          memory: "512Mi"
-        limits:
-          cpu: "1"
-          memory: "1Gi"
-
-    # Kaniko container
-    - name: kaniko
-      image: gcr.io/kaniko-project/executor:latest
-      resources:
-        requests:
-          cpu: "200m"
-          memory: "512Mi"
-        limits:
-          cpu: "1"
-          memory: "1Gi"
-
-  restartPolicy: Never
+  - name: maven
+    image: maven:3.9.6-eclipse-temurin-1
+    command:
+    - cat
+    tty: true
 """
     }
   }
 
   environment {
-    APP_DIR = "java-maven-sonar-argocd-helm-k8s/spring-boot-app"
-    DEPLOY_DIR = "java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests"
-    DOCKER_IMAGE = "abhishekf5/ultimate-cicd:${BUILD_NUMBER}"
-    SONAR_URL = "http://192.168.0.100:9000"
-  }
-
-  options {
-    buildDiscarder(logRotator(numToKeepStr: '10'))
+    DOCKER_IMAGE = "fazil2664/ultimate-cicd:${BUILD_NUMBER}"
   }
 
   stages {
 
     stage('Checkout') {
       steps {
-        echo "Checking out code..."
-        checkout scm
+        echo "Code checkout done"
+        // git branch: 'main', url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
       }
     }
 
     stage('Build and Test') {
       steps {
         container('maven') {
-          sh """
-            cd ${APP_DIR}
-            mvn clean package -B
-          """
+          sh '''
+            cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
+            mvn clean package
+          '''
         }
       }
     }
@@ -83,12 +43,12 @@ spec:
       steps {
         container('maven') {
           withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
-            sh """
-              cd ${APP_DIR}
+            sh '''
+              cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
               mvn sonar:sonar \
                 -Dsonar.login=$SONAR_AUTH_TOKEN \
-                -Dsonar.host.url=${SONAR_URL}
-            """
+                -Dsonar.host.url=http://192.168.0.100:9000
+            '''
           }
         }
       }
@@ -96,21 +56,17 @@ spec:
 
     stage('Build and Push Docker Image') {
       steps {
-        container('kaniko') {
+        container('maven') {
           withCredentials([usernamePassword(
             credentialsId: 'dockerhub-creds',
             usernameVariable: 'DOCKER_USERNAME',
             passwordVariable: 'DOCKER_PASSWORD'
           )]) {
-            sh """
-              mkdir -p /kaniko/.docker
-              echo "{\\"auths\\":{\\"https://index.docker.io/v1/\\":{\\"username\\":\\"$DOCKER_USERNAME\\",\\"password\\":\\"$DOCKER_PASSWORD\\"}}}" > /kaniko/.docker/config.json
-
-              /kaniko/executor \
-                --context=${APP_DIR} \
-                --dockerfile=${APP_DIR}/Dockerfile \
-                --destination=${DOCKER_IMAGE}
-            """
+            sh '''
+              docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
+              docker build -t ${DOCKER_IMAGE} java-maven-sonar-argocd-helm-k8s/spring-boot-app
+              docker push ${DOCKER_IMAGE}
+            '''
           }
         }
       }
@@ -120,31 +76,21 @@ spec:
       steps {
         container('maven') {
           withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
-            sh """
+            sh '''
               git config user.email "rkftrip@gmail.com"
               git config user.name "fasil7170"
 
-              git pull --rebase https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero HEAD:main || true
+              sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" \
+              java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
 
-              sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" ${DEPLOY_DIR}/deployment.yml
-
-              git add ${DEPLOY_DIR}/deployment.yml
-              git commit -m "Update image to ${BUILD_NUMBER}" || echo "No changes to commit"
+              git add .
+              git commit -m "Update image to ${BUILD_NUMBER}"
               git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero HEAD:main
-            """
+            '''
           }
         }
       }
     }
 
-  }
-
-  post {
-    success {
-      echo "Pipeline completed successfully ✅"
-    }
-    failure {
-      echo "Pipeline failed ❌"
-    }
   }
 }
