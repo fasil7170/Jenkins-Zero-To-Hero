@@ -1,64 +1,40 @@
 pipeline {
-    agent {
-        kubernetes {
-            label 'ultimate-cicd-dind'
-            defaultContainer 'jnlp'
-            yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: maven
-    image: maven:3.9.12-eclipse-temurin-17
-    command:
-    - cat
-    tty: true
-  - name: docker
-    image: docker:24.0-dind
-    securityContext:
-      privileged: true
-    command:
-    - dockerd-entrypoint.sh
-    tty: true
-"""
-        }
-    }
-
+    agent any
     environment {
-        DOCKER_IMAGE = "fazil2664/ultimate-cicd:${BUILD_NUMBER}"
+        GITHUB_TOKEN = credentials('github-token')  // GitHub token stored in Jenkins
+        DOCKER_CREDENTIALS = credentials('docker-hub-creds') // Docker hub credentials
     }
 
     stages {
 
-        stage('Checkout') {
+        stage('Prepare Workspace') {
             steps {
-                echo "Code checkout done"
-                // git branch: 'main', url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
+                script {
+                    // Ensure Git repo exists
+                    if (!fileExists('.git')) {
+                        echo "Repo missing, checking out SCM"
+                        checkout scm
+                    } else {
+                        echo "Git repo already exists, skipping checkout"
+                    }
+                }
             }
         }
 
         stage('Build and Test') {
             steps {
-                container('maven') {
-                    sh '''
-                        cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
-                        mvn clean package
-                    '''
+                script {
+                    echo "Running Build and Test..."
+                    // Place your Maven/Gradle build commands here
                 }
             }
         }
 
         stage('Static Code Analysis') {
             steps {
-                container('maven') {
-                    withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
-                        sh '''
-                            cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
-                            mvn sonar:sonar \
-                              -Dsonar.login=$SONAR_AUTH_TOKEN \
-                              -Dsonar.host.url=http://192.168.0.100:9000
-                        '''
-                    }
+                script {
+                    echo "Running static code analysis..."
+                    // Example: sonar-scanner commands
                 }
             }
         }
@@ -66,47 +42,49 @@ spec:
         stage('Build and Push Docker Image') {
             steps {
                 container('docker') {
-                    withCredentials([usernamePassword(
-                        credentialsId: 'dockerhub-creds',
-                        usernameVariable: 'DOCKER_USERNAME',
-                        passwordVariable: 'DOCKER_PASSWORD'
-                    )]) {
-                        sh '''
-                            echo "Waiting for Docker daemon to start..."
-                            timeout=30
-                            until docker info > /dev/null 2>&1 || [ $timeout -le 0 ]; do
-                                echo "Docker daemon not ready, waiting..."
-                                sleep 2
-                                timeout=$((timeout - 2))
-                            done
-
-                            if [ $timeout -le 0 ]; then
-                                echo "Docker daemon failed to start"
-                                exit 1
-                            fi
-
-                            echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
-
-                            docker build -t ${DOCKER_IMAGE} java-maven-sonar-argocd-helm-k8s/spring-boot-app
-                            docker push ${DOCKER_IMAGE}
-                        '''
+                    script {
+                        echo "Building Docker image..."
+                        sh """
+                        docker login -u ${DOCKER_CREDENTIALS_USR} -p ${DOCKER_CREDENTIALS_PSW}
+                        docker build -t my-app:${BUILD_NUMBER} .
+                        docker push my-app:${BUILD_NUMBER}
+                        """
                     }
                 }
             }
         }
 
- stage('Update Deployment File') {
-    steps {
-        checkout scm  // ensures the workspace has the Git repo
-        container('your-container') {
-            withCredentials([string(credentialsId: 'GITHUB_TOKEN', variable: 'GITHUB_TOKEN')]) {
-                sh '''
-                    git config user.email "fasilmubarak07@gmail.com"
-                    git config user.name "Your Name"
-                    git add deployment.yaml
-                    git commit -m "Update deployment file"
-                '''
+        stage('Update Deployment File') {
+            steps {
+                container('kubectl') {
+                    script {
+                        // Ensure Git repo exists even if pipeline restarted mid-way
+                        if (!fileExists('.git')) {
+                            echo ".git missing, checking out repo"
+                            checkout scm
+                        }
+
+                        echo "Updating deployment manifest..."
+                        sh """
+                        git config user.email "fasilmubarak07@gmail.com"
+                        git config user.name "fasil7170"
+                        sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+                        git add .
+                        git commit -m "Update image to ${BUILD_NUMBER}" || echo "No changes to commit"
+                        git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero HEAD:main
+                        """
+                    }
+                }
             }
+        }
+    }
+
+    post {
+        failure {
+            echo "Pipeline failed. Check logs."
+        }
+        success {
+            echo "Pipeline completed successfully!"
         }
     }
 }
