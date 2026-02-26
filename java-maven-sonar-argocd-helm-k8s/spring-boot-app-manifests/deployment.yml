@@ -16,6 +16,6 @@ spec:
     spec:
       containers:
       - name: spring-boot-app
-        image: docker pull fazil2664/ultimate-cicd:1
+        image: docker pull fazil2664/ultimate-cicd:6
         ports:
         - containerPort: 8080
