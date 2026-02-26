@@ -90,28 +90,36 @@ spec:
 
 stage('Update Deployment File') {
     steps {
+        // Ensure we run in the 'jnlp' container which has the workspace
+        container('jnlp') {
+            // Explicitly checkout the repo again to guarantee .git exists
+            checkout scm
 
-        // Run checkout in jnlp container
-        checkout scm
+            withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
+                sh '''
+                    cd "$WORKSPACE"
 
-        // Ensure everything is run in the correct context
-        withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
-            sh '''
-                cd "$WORKSPACE"
+                    # Check that we are in a git repo
+                    git status
 
-                git status
+                    # Configure Git user
+                    git config user.email "fasilmubarak07@gmail.com"
+                    git config user.name "fasil7170"
 
-                git config user.email "fasilmubarak07@gmail.com"
-                git config user.name "fasil7170"
+                    # Update deployment file with new image tag
+                    sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" \
+                        java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
 
-                sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" \
-                  java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+                    # Commit changes if any
+                    git add .
+                    git diff --cached --quiet || git commit -m "Update image to ${BUILD_NUMBER}"
 
-                git add .
-                git commit -m "Update image to ${BUILD_NUMBER}" || echo "No changes to commit"
-
-                git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero HEAD:main
-            '''
+                    # Push to GitHub
+                    git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero HEAD:main
+                '''
+            }
         }
+    }
+}
     }
 }
