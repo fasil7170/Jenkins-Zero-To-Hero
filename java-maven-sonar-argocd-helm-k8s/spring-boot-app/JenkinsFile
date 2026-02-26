@@ -35,7 +35,7 @@ spec:
     }
 
     environment {
-        DOCKER_IMAGE = "fazil2664/ultimate-cicd:${BUILD_NUMBER}"
+        DOCKER_IMAGE = "abishekf5/ultimate-cicd:${BUILD_NUMBER}"
     }
 
     stages {
