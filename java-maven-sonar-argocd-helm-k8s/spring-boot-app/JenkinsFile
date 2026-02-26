@@ -95,29 +95,25 @@ spec:
             }
         }
 
-stage('Update Deployment File') {
-    steps {
-        container('maven') {
-            withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
-                sh '''
-                    git config user.email "fasilmubarak07@gmail.com"
-                    git config user.name "fasil"
+        stage('Update Deployment File') {
+            steps {
+                container('maven') {
+                    withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
+                        sh '''
+                            git config user.email "fasilmubarak07@gmail.com"
+                            git config user.name "fasil7170"
 
-                    git checkout main
-                    git pull origin main
+                            sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" \
+                            java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
 
-                    sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" \
-                        java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-
-                    git add java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-                    if ! git diff --cached --quiet; then
-                        git commit -m "Update deployment image to version ${BUILD_NUMBER}"
-                        git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero main
-                    else
-                        echo "No changes to commit."
-                    fi
-                '''
+                            git add .
+                            git commit -m "Update image to ${BUILD_NUMBER}"
+                            git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero HEAD:main
+                        '''
+                    }
+                }
             }
         }
+
     }
 }
