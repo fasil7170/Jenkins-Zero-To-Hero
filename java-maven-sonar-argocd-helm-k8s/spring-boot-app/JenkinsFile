@@ -11,8 +11,8 @@ spec:
   - name: jnlp
     image: jenkins/inbound-agent:3355.v388858a_47b_33-14
     args:
-      - '\$(JENKINS_SECRET)'
-      - '\$(JENKINS_NAME)'
+      - '\\$(JENKINS_SECRET)'
+      - '\\$(JENKINS_NAME)'
     volumeMounts:
       - mountPath: /home/jenkins/agent
         name: workspace-volume
@@ -30,6 +30,9 @@ spec:
     image: docker:24.0-dind
     securityContext:
       privileged: true
+    env:
+      - name: DOCKER_TLS_CERTDIR
+        value: ""
     command:
       - dockerd-entrypoint.sh
     tty: true
@@ -51,6 +54,9 @@ spec:
 
     environment {
         DOCKER_IMAGE = "fazil2664/ultimate-cicd:${BUILD_NUMBER}"
+        GIT_USER_NAME = "fazil2664"
+        GIT_REPO_NAME = "your-repo-name"
+        SONAR_HOST_URL = "http://192.168.0.100:9000"
     }
 
     stages {
@@ -82,7 +88,7 @@ spec:
                             cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
                             mvn sonar:sonar -B \
                               -Dsonar.login=$SONAR_AUTH_TOKEN \
-                              -Dsonar.host.url=http://192.168.0.100:9000
+                              -Dsonar.host.url=$SONAR_HOST_URL
                         '''
                     }
                 }
@@ -100,9 +106,13 @@ spec:
                         sh '''
                             echo "Waiting for Docker daemon..."
                             timeout=60
-                            until docker info > /dev/null 2>&1 || [ $timeout -le 0 ]; do
+                            until docker info > /dev/null 2>&1; do
                                 sleep 2
                                 timeout=$((timeout - 2))
+                                if [ $timeout -le 0 ]; then
+                                    echo "Docker daemon failed to start"
+                                    exit 1
+                                fi
                             done
 
                             echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
@@ -112,29 +122,47 @@ spec:
                     }
                 }
             }
-        }withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
-    sh '''
-        git config user.email "fasilmubarak07@gmail.com"
-        git config user.name "fasil7170"
+        }
 
-        git checkout main
+        stage('Update Deployment Manifest') {
+            steps {
+                container('jnlp') {
+                    withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
+                        sh '''
+                            git config user.email "fasilmubarak07@gmail.com"
+                            git config user.name "fasil7170"
 
-        BUILD_NUMBER=${BUILD_NUMBER}
-        FILE_PATH="java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml"
+                            git checkout main
 
-        if [ -f "$FILE_PATH" ]; then
-            sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" "$FILE_PATH"
+                            FILE_PATH="java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml"
 
-            git add "$FILE_PATH"
+                            if [ -f "$FILE_PATH" ]; then
+                                sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" "$FILE_PATH"
+                                git add "$FILE_PATH"
 
-            if ! git diff --cached --quiet; then
-                git commit -m "Update deployment image to version ${BUILD_NUMBER}"
-                git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
-            else
-                echo "No changes to commit"
-            fi
-        else
-            echo "Deployment file not found!"
-            exit 1
-        fi
-    '''
+                                if ! git diff --cached --quiet; then
+                                    git commit -m "Update deployment image to version ${BUILD_NUMBER}"
+                                    git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git HEAD:main
+                                else
+                                    echo "No changes to commit"
+                                fi
+                            else
+                                echo "Deployment file not found!"
+                                exit 1
+                            fi
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Pipeline executed successfully!"
+        }
+        failure {
+            echo "Pipeline failed!"
+        }
+    }
+}
