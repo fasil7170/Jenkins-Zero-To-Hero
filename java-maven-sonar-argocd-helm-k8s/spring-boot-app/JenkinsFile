@@ -1,47 +1,98 @@
+proper jenkin cript for kinoki - dind
+
+
 pipeline {
-    agent any
+    agent {
+        kubernetes {
+            label 'ultimate-cicd-dind'
+            defaultContainer 'jnlp'
+            yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: maven
+    image: maven:3.9.12-eclipse-temurin-17
+    command:
+    - cat
+    tty: true
+  - name: docker
+    image: docker:24.0-dind
+    securityContext:
+      privileged: true
+    command:
+    - dockerd-entrypoint.sh
+    tty: true
+"""
+        }
+    }
 
     environment {
-        GITHUB_REPO = "https://github.com/fasil7170/Jenkins-Zero-To-Hero.git"
-        GITHUB_TOKEN = credentials('github-token')  // GitHub personal access token stored in Jenkins
-        DOCKER_IMAGE = "fasil7170/spring-boot-app"
+        DOCKER_IMAGE = "fazil2664/ultimate-cicd:${BUILD_NUMBER}"
     }
 
     stages {
-        stage('Checkout SCM') {
+
+        stage('Checkout') {
             steps {
-                echo "Checking out source code..."
-                checkout([$class: 'GitSCM', 
-                          branches: [[name: '*/main']], 
-                          userRemoteConfigs: [[url: "${GITHUB_REPO}", credentialsId: 'github-token']]])
+                echo "Code checkout done"
+                // git branch: 'main', url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
             }
         }
 
         stage('Build and Test') {
             steps {
-                echo "Building Maven project..."
-                sh 'mvn clean package'
+                container('maven') {
+                    sh '''
+                        cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
+                        mvn clean package
+                    '''
+                }
             }
         }
 
         stage('Static Code Analysis') {
             steps {
-                echo "Running SonarQube analysis..."
-                withSonarQubeEnv('SonarQube') {  // Ensure 'SonarQube' matches your Jenkins server
-                    sh 'mvn sonar:sonar'
+                container('maven') {
+                    withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
+                        sh '''
+                            cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
+                            mvn sonar:sonar \
+                              -Dsonar.login=$SONAR_AUTH_TOKEN \
+                              -Dsonar.host.url=http://192.168.0.100:9000
+                        '''
+                    }
                 }
             }
         }
 
         stage('Build and Push Docker Image') {
             steps {
-                script {
-                    echo "Building Docker image..."
-                    def image = docker.build("${DOCKER_IMAGE}:${BUILD_NUMBER}")
+                container('docker') {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DOCKER_USERNAME',
+                        passwordVariable: 'DOCKER_PASSWORD'
+                    )]) {
+                        sh '''
+                            echo "Waiting for Docker daemon to start..."
+                            timeout=30
+                            until docker info > /dev/null 2>&1 || [ $timeout -le 0 ]; do
+                                echo "Docker daemon not ready, waiting..."
+                                sleep 2
+                                timeout=$((timeout - 2))
+                            done
 
-                    echo "Pushing Docker image to Docker Hub..."
-                    docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-credentials') {
-                        image.push()
+                            if [ $timeout -le 0 ]; then
+                                echo "Docker daemon failed to start"
+                                exit 1
+                            fi
+
+                            echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+
+                            docker build -t ${DOCKER_IMAGE} java-maven-sonar-argocd-helm-k8s/spring-boot-app
+                            docker push ${DOCKER_IMAGE}
+                        '''
                     }
                 }
             }
@@ -49,38 +100,23 @@ pipeline {
 
         stage('Update Deployment File') {
             steps {
-                dir('java-maven-sonar-argocd-helm-k8s') {
-                    script {
-                        def filePath = "spring-boot-app-manifests/deployment.yml"
-                        if (sh(script: "grep -q 'replaceImageTag' ${filePath}", returnStatus: true) == 0) {
-                            echo "Updating image tag in deployment manifest..."
-                            sh """
-                                git config user.email "fasilmubarak07@gmail.com"
-                                git config user.name "fasil7170"
-                                sed -i 's/replaceImageTag/${BUILD_NUMBER}/g' ${filePath}
-                                git add ${filePath}
-                                git commit -m "Update image to ${BUILD_NUMBER}" --allow-empty
-                                git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero.git main
-                            """
-                        } else {
-                            echo "No placeholder 'replaceImageTag' found; skipping commit."
-                        }
+                container('maven') {
+                    withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
+                        sh '''
+                            git config user.email "fasilmubarak07@gmail.com"
+                            git config user.name "fasil7170"
+
+                            sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" \
+                            java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+
+                            git add .
+                            git commit -m "Update image to ${BUILD_NUMBER}"
+                            git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero HEAD:main
+                        '''
                     }
                 }
             }
         }
-    }
 
-    post {
-        always {
-            echo "Cleaning workspace..."
-            cleanWs()
-        }
-        success {
-            echo "Pipeline completed successfully!"
-        }
-        failure {
-            echo "Pipeline failed! Check logs."
-        }
     }
 }
