@@ -107,6 +107,16 @@ spec:
         sh 'mvn clean package'
     }
 
+    container('maven') {
+
+    stage('Checkout') {
+        checkout scm
+    }
+
+    stage('Build') {
+        sh 'mvn clean package'
+    }
+
     stage('Update Deployment File') {
         withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
             sh '''
