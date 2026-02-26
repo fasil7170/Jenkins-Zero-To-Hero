@@ -1,6 +1,3 @@
-proper jenkin cript for kinoki - dind
-
-
 pipeline {
     agent {
         kubernetes {
