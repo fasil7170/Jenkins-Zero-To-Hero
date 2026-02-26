@@ -101,6 +101,9 @@ spec:
         stage('Update Deployment File') {
             steps {
                 container('maven') {
+
+// 🔥 Add this line
+            checkout scm
                     withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
                         sh """
                             git config user.email "rkftrip@gmail.com"
