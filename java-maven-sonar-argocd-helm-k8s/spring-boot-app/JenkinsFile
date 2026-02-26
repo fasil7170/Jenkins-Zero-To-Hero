@@ -28,12 +28,24 @@ spec:
         DOCKER_IMAGE = "fazil2664/ultimate-cicd:${BUILD_NUMBER}"
     }
 
+    options {
+        skipDefaultCheckout(false) // Ensure checkout always runs
+    }
+
     stages {
 
         stage('Checkout') {
             steps {
                 container('maven') {
-                    git branch: 'main', url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
+                    script {
+                        // Force checkout if .git is missing
+                        if (!fileExists('.git')) {
+                            echo "Git repository not found, checking out..."
+                            git branch: 'main', url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
+                        } else {
+                            echo "Git repository already exists, skipping checkout."
+                        }
+                    }
                 }
             }
         }
@@ -100,21 +112,27 @@ spec:
             steps {
                 container('maven') {
                     withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
-                        sh '''
-                            git config user.email "fasilmubarak07@gmail.com"
-                            git config user.name "fasil7170"
+                        script {
+                            if (fileExists('.git')) {
+                                sh '''
+                                    git config user.email "fasilmubarak07@gmail.com"
+                                    git config user.name "fasil7170"
 
-                            FILE="java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml"
+                                    FILE="java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml"
 
-                            if grep -q "replaceImageTag" "$FILE"; then
-                                sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" "$FILE"
-                                git add "$FILE"
-                                git commit -m "Update image to ${BUILD_NUMBER}" --allow-empty
-                                git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero.git main
-                            else
-                                echo "No placeholder found in $FILE; skipping commit."
-                            fi
-                        '''
+                                    if grep -q "replaceImageTag" "$FILE"; then
+                                        sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" "$FILE"
+                                        git add "$FILE"
+                                        git commit -m "Update image to ${BUILD_NUMBER}" --allow-empty
+                                        git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero.git main
+                                    else
+                                        echo "No placeholder found in $FILE; skipping commit."
+                                    fi
+                                '''
+                            } else {
+                                echo "Git repository not found; skipping deployment file update."
+                            }
+                        }
                     }
                 }
             }
