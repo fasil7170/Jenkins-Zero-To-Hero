@@ -62,8 +62,12 @@ spec:
                 }
             }
         }
-
-        stage('Build and Push Docker Image') {
+stage('Checkout') {
+    steps {
+        checkout scm
+    }
+}
+         stage('Build and Push Docker Image') {
             steps {
                 container('docker') {
                     withCredentials([usernamePassword(
