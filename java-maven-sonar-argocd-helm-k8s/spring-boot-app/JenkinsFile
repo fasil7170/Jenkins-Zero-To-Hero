@@ -1,32 +1,50 @@
 pipeline {
     agent {
         kubernetes {
-            defaultContainer 'jnlp'
+            label 'maven-dind-agent'
+            defaultContainer 'maven'
             yaml """
 apiVersion: v1
 kind: Pod
+metadata:
+  labels:
+    some-label: maven-dind
 spec:
   containers:
-  - name: dind
+  - name: maven
     image: abhishekf5/maven-abhishek-docker-agent:v1
+    command:
+    - cat
+    tty: true
+    volumeMounts:
+    - name: docker-sock
+      mountPath: /var/run/docker.sock
+  - name: dind
+    image: docker:24-dind
     securityContext:
       privileged: true
     volumeMounts:
-      - name: docker-sock
-        mountPath: /var/run/docker.sock
-  volumes:
     - name: docker-sock
-      hostPath:
-        path: /var/run/docker.sock
+      mountPath: /var/run/docker.sock
+  volumes:
+  - name: docker-sock
+    hostPath:
+      path: /var/run/docker.sock
 """
         }
     }
-
+    environment {
+        SONAR_URL = "http://192.168.0.100:9000"
+        DOCKER_IMAGE = "abhishekf5/ultimate-cicd:${BUILD_NUMBER}"
+        GIT_REPO_NAME = "Jenkins-Zero-To-Hero"
+        GIT_USER_NAME = "iam-veeramalla"
+    }
     stages {
+
         stage('Checkout') {
             steps {
-                container('jnlp') {
-                    sh 'echo "Checkout stage passed"'
+                container('maven') {
+                    echo "Checkout stage"
                     // git branch: 'main', url: 'https://github.com/iam-veeramalla/Jenkins-Zero-To-Hero.git'
                 }
             }
@@ -34,23 +52,23 @@ spec:
 
         stage('Build and Test') {
             steps {
-                container('dind') {
-                    sh 'ls -ltr'
-                    sh 'cd java-maven-sonar-argocd-helm-k8s/spring-boot-app && mvn clean package'
+                container('maven') {
+                    echo "Maven Build stage"
+                    sh '''
+                        cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
+                        mvn clean package
+                    '''
                 }
             }
         }
 
         stage('Static Code Analysis') {
-            environment {
-                SONAR_URL = "http://192.168.0.100:9000"
-            }
             steps {
-                container('dind') {
+                container('maven') {
                     withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
                         sh '''
-                        cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
-                        mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}
+                            cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
+                            mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}
                         '''
                     }
                 }
@@ -58,45 +76,49 @@ spec:
         }
 
         stage('Build and Push Docker Image') {
-            environment {
-                DOCKER_IMAGE = "abhishekf5/ultimate-cicd:${BUILD_NUMBER}"
-            }
             steps {
                 container('dind') {
-                    script {
+                    withCredentials([usernamePassword(credentialsId: 'docker-cred', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
                         sh '''
-                        cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
-                        docker build -t ${DOCKER_IMAGE} .
+                            cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
+                            docker build -t ${DOCKER_IMAGE} .
+                            echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+                            docker push ${DOCKER_IMAGE}
                         '''
-                        def dockerImage = docker.image("${DOCKER_IMAGE}")
-                        docker.withRegistry('https://index.docker.io/v1/', 'docker-cred') {
-                            dockerImage.push()
-                        }
                     }
                 }
             }
         }
 
         stage('Update Deployment File') {
-            environment {
-                GIT_REPO_NAME = "Jenkins-Zero-To-Hero"
-                GIT_USER_NAME = "iam-veeramalla"
-            }
             steps {
-                container('jnlp') {
-                    withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
+                container('maven') {
+                    withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
                         sh '''
-                        git config user.email "abhishek.xyz@gmail.com"
-                        git config user.name "Abhishek Veeramalla"
-                        BUILD_NUMBER=${BUILD_NUMBER}
-                        sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-                        git add java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-                        git commit -m "Update deployment image to version ${BUILD_NUMBER}"
-                        git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
+                            cd java-maven-sonar-argocd-helm-k8s
+                            git config user.email "abhishek.xyz@gmail.com"
+                            git config user.name "Abhishek Veeramalla"
+                            sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" spring-boot-app-manifests/deployment.yml
+                            git add spring-boot-app-manifests/deployment.yml
+                            git commit -m "Update deployment image to version ${BUILD_NUMBER}" || echo "No changes to commit"
+                            git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
                         '''
                     }
                 }
             }
+        }
+    }
+
+    post {
+        always {
+            echo "Cleaning workspace"
+            cleanWs()
+        }
+        success {
+            echo "Pipeline completed successfully"
+        }
+        failure {
+            echo "Pipeline failed"
         }
     }
 }
