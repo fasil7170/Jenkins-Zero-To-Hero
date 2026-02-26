@@ -8,28 +8,43 @@ apiVersion: v1
 kind: Pod
 spec:
   containers:
+  - name: jnlp
+    image: jenkins/inbound-agent:3355.v388858a_47b_33-14
+    args:
+      - '\$(JENKINS_SECRET)'
+      - '\$(JENKINS_NAME)'
+    volumeMounts:
+      - mountPath: /home/jenkins/agent
+        name: workspace-volume
+
   - name: maven
     image: maven:3.9.12-eclipse-temurin-17
     command:
-    - cat
+      - cat
     tty: true
     volumeMounts:
       - mountPath: /home/jenkins/agent
         name: workspace-volume
+
   - name: docker
     image: docker:24.0-dind
     securityContext:
       privileged: true
     command:
-    - dockerd-entrypoint.sh
+      - dockerd-entrypoint.sh
     tty: true
     volumeMounts:
       - mountPath: /home/jenkins/agent
         name: workspace-volume
+      - mountPath: /var/lib/docker
+        name: docker-storage
+
   volumes:
     - name: workspace-volume
       persistentVolumeClaim:
         claimName: jenkins-workspace-pvc
+    - name: docker-storage
+      emptyDir: {}
 """
         }
     }
@@ -43,7 +58,6 @@ spec:
         stage('Checkout Code') {
             steps {
                 container('jnlp') {
-                    // Single checkout for all stages
                     checkout scm
                 }
             }
@@ -54,7 +68,7 @@ spec:
                 container('maven') {
                     sh '''
                         cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
-                        mvn clean package
+                        mvn clean package -B
                     '''
                 }
             }
@@ -66,7 +80,7 @@ spec:
                     withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
                         sh '''
                             cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
-                            mvn sonar:sonar \
+                            mvn sonar:sonar -B \
                               -Dsonar.login=$SONAR_AUTH_TOKEN \
                               -Dsonar.host.url=http://192.168.0.100:9000
                         '''
@@ -85,7 +99,7 @@ spec:
                     )]) {
                         sh '''
                             echo "Waiting for Docker daemon..."
-                            timeout=30
+                            timeout=60
                             until docker info > /dev/null 2>&1 || [ $timeout -le 0 ]; do
                                 sleep 2
                                 timeout=$((timeout - 2))
@@ -100,24 +114,30 @@ spec:
             }
         }
 
-      stage('Update Deployment File') {
-        environment {
-            GIT_REPO_NAME = "Jenkins-Zero-To-Hero"
-            GIT_USER_NAME = "iam-veeramalla"
-        }
-        steps {
-            withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
-                sh '''
-                    git config user.email "abhishek.xyz@gmail.com"
-                    git config user.name "Abhishek Veeramalla"
-                    BUILD_NUMBER=${BUILD_NUMBER}
-                    sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-                    git add java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-                    git commit -m "Update deployment image to version ${BUILD_NUMBER}"
-                    git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
-                '''
+        stage('Update Deployment File') {
+            environment {
+                GIT_REPO_NAME = "Jenkins-Zero-To-Hero"
+                GIT_USER_NAME = "iam-veeramalla"
+            }
+            steps {
+                withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
+                    sh '''
+                        git config user.email "abhishek.xyz@gmail.com"
+                        git config user.name "Abhishek Veeramalla"
+
+                        BUILD_NUMBER=${BUILD_NUMBER}
+                        sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+
+                        git add java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+                        if ! git diff --cached --quiet; then
+                            git commit -m "Update deployment image to version ${BUILD_NUMBER}"
+                            git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
+                        else
+                            echo "No changes to commit"
+                        fi
+                    '''
+                }
             }
         }
     }
-  }
 }
