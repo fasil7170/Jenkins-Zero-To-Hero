@@ -53,36 +53,39 @@ pipeline {
                 }
             }
         }
-
-        stage('Update Deployment File') {
-            steps {
-                container('kubectl') {
-                    script {
-                        // Ensure Git repo exists even if pipeline restarted mid-way
-                        if (!fileExists('.git')) {
-                            echo ".git missing, checking out repo"
-                            checkout scm
-                        }
-
-                        echo "Updating deployment manifest..."
-                        sh """
-                        sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-                        git add .
-                        git commit -m "Update image to ${BUILD_NUMBER}" || echo "No changes to commit"
-                        git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero HEAD:main
-                        """
+stage('Update Deployment File') {
+    steps {
+        container('your-container') { // container where git and sed are available
+            withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]) {
+                script {
+                    // Ensure Git repo exists
+                    if (!fileExists('.git')) {
+                        echo ".git directory missing, checking out repository..."
+                        checkout scm
+                    } else {
+                        echo "Git repo found, skipping checkout."
                     }
+
+                    // Update deployment file and commit changes safely
+                    sh '''
+                    # Configure Git user
+                    git config user.email "abhishek.xyz@gmail.com"
+                    git config user.name "Abhishek Veeramalla"
+
+                    # Replace image tag in deployment YAML
+                    sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+
+                    # Stage changes
+                    git add .
+
+                    # Commit only if there are changes
+                    git diff-index --quiet HEAD || git commit -m "Update image to ${BUILD_NUMBER}"
+
+                    # Push changes to GitHub
+                    git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero HEAD:main
+                    '''
                 }
             }
-        }
-    }
-
-    post {
-        failure {
-            echo "Pipeline failed. Check logs."
-        }
-        success {
-            echo "Pipeline completed successfully!"
         }
     }
 }
