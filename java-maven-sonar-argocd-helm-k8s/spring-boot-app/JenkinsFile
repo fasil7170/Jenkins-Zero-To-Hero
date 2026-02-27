@@ -27,6 +27,9 @@ spec:
   containers:
   - name: maven
     image: maven:3.9.3-eclipse-temurin-17
+    command:
+      - cat
+    tty: true
 """
                 }
             }
@@ -49,6 +52,9 @@ spec:
   containers:
   - name: maven
     image: maven:3.9.3-eclipse-temurin-17
+    command:
+      - cat
+    tty: true
 """
                 }
             }
@@ -79,13 +85,19 @@ spec:
             }
             steps {
                 container('kaniko') {
-                    sh """
-                    /kaniko/executor \\
-                      --dockerfile=java-maven-sonar-argocd-helm-k8s/spring-boot-app/Dockerfile \\
-                      --context=dir://java-maven-sonar-argocd-helm-k8s/spring-boot-app \\
-                      --destination=${DOCKER_IMAGE} \\
-                      --skip-tls-verify
-                    """
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh """
+                        # Setup Docker credentials for Kaniko
+                        mkdir -p /kaniko/.docker
+                        echo '{ "auths": { "https://index.docker.io/v1/": { "username": "${DOCKER_USER}", "password": "${DOCKER_PASS}" } } }' > /kaniko/.docker/config.json
+
+                        # Build and push Docker image
+                        /kaniko/executor \\
+                          --dockerfile=java-maven-sonar-argocd-helm-k8s/spring-boot-app/Dockerfile \\
+                          --context=dir://java-maven-sonar-argocd-helm-k8s/spring-boot-app \\
+                          --destination=${DOCKER_IMAGE}
+                        """
+                    }
                 }
             }
         }
