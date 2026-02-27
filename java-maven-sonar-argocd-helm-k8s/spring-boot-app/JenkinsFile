@@ -32,8 +32,8 @@ spec:
 
         stage('Checkout') {
             steps {
-                echo "Code checkout done"
-                // git branch: 'main', url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
+                echo "Checking out the code"
+                git branch: 'main', url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
             }
         }
 
@@ -108,7 +108,7 @@ spec:
 
                             git add .
                             git commit -m "Update image to ${BUILD_NUMBER}"
-                            git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero HEAD:main
+                            git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero.git main
                         '''
                     }
                 }
