@@ -95,23 +95,36 @@ spec:
             }
         }
 
-        stage('Update Deployment File') {
-            steps {
-                container('maven') {
-                    withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
-                        sh '''
-                            git config user.email "fasilmubarak07@gmail.com"
-                            git config user.name "fasil7170"
+     stage('Update Deployment File') {
+    steps {
+        container('maven') {
+            withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
+                // Retry up to 3 times if the git push fails
+                retry(3) {
+                    sh '''
+                        git config user.email "fasilmubarak07@gmail.com"
+                        git config user.name "fasil7170"
 
-                            sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" \
-                            java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+                        # Update the file
+                        sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
 
+                        # Only proceed if changes exist
+                        if ! git diff --quiet; then
                             git add .
                             git commit -m "Update image to ${BUILD_NUMBER}"
-                            git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero HEAD:main
-                        '''
-                    }
+                            
+                            # Pull latest changes to avoid conflicts, then push
+                            git pull --rebase https://${GITHUB_TOKEN}@://github.com main
+                            git push https://${GITHUB_TOKEN}@://github.com HEAD:main
+                        else
+                            echo "No changes to commit."
+                        fi
+                    '''
                 }
+            }
+        }
+    }
+}
             }
         }
 
