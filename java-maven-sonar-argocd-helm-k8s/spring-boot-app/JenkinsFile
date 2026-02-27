@@ -18,18 +18,52 @@ pipeline {
         }
 
         stage('Build and Test') {
+            agent {
+                kubernetes {
+                    yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: maven
+    image: maven:3.9.3-eclipse-temurin-17
+    command:
+      - cat
+    tty: true
+"""
+                }
+            }
             steps {
-                dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
-                    sh 'mvn clean package'
+                container('maven') {
+                    dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
+                        sh 'mvn clean package'
+                    }
                 }
             }
         }
 
         stage('Static Code Analysis') {
+            agent {
+                kubernetes {
+                    yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: maven
+    image: maven:3.9.3-eclipse-temurin-17
+    command:
+      - cat
+    tty: true
+"""
+                }
+            }
             steps {
-                withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
-                    dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
-                        sh "mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}"
+                container('maven') {
+                    withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
+                        dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
+                            sh "mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}"
+                        }
                     }
                 }
             }
@@ -58,7 +92,6 @@ spec:
                       --dockerfile=java-maven-sonar-argocd-helm-k8s/spring-boot-app/Dockerfile \\
                       --context=dir://java-maven-sonar-argocd-helm-k8s/spring-boot-app \\
                       --destination=${DOCKER_IMAGE} \\
-                      --insecure \\
                       --skip-tls-verify
                     """
                 }
@@ -73,7 +106,7 @@ spec:
                     git config user.name "Fasil Mubarak"
                     sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
                     git add java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-                    git commit -m "Update deployment image to version ${BUILD_NUMBER}"
+                    git commit -m "Update deployment image to version ${BUILD_NUMBER}" || echo "No changes to commit"
                     git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
                     """
                 }
