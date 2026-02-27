@@ -26,7 +26,7 @@ spec:
   containers:
   - name: maven
     image: maven:3.9.3-eclipse-temurin-17
-    command: ["cat"]       # keeps Maven container alive
+    command: ["cat"]       # keeps Maven container alive for Jenkins
     tty: true
 """
                 }
@@ -59,7 +59,10 @@ spec:
                 container('maven') {
                     withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
                         dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
-                            sh "mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}"
+                            // triple single quotes for safe shell interpolation
+                            sh '''
+                                mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=$SONAR_URL
+                            '''
                         }
                     }
                 }
@@ -77,22 +80,22 @@ spec:
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
     imagePullPolicy: IfNotPresent
-    # NO command/cat here — Kaniko runs its own executor
+    # No command here! Kaniko runs its own executor
 """
                 }
             }
             steps {
                 container('kaniko') {
                     withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                        sh """
-                        mkdir -p /kaniko/.docker
-                        echo '{ "auths": { "https://index.docker.io/v1/": { "username": "${DOCKER_USER}", "password": "${DOCKER_PASS}" } } }' > /kaniko/.docker/config.json
+                        sh '''
+                            mkdir -p /kaniko/.docker
+                            echo '{ "auths": { "https://index.docker.io/v1/": { "username": "${DOCKER_USER}", "password": "${DOCKER_PASS}" } } }' > /kaniko/.docker/config.json
 
-                        /kaniko/executor \\
-                          --dockerfile=java-maven-sonar-argocd-helm-k8s/spring-boot-app/Dockerfile \\
-                          --context=dir://java-maven-sonar-argocd-helm-k8s/spring-boot-app \\
-                          --destination=${DOCKER_IMAGE}
-                        """
+                            /kaniko/executor \
+                              --dockerfile=java-maven-sonar-argocd-helm-k8s/spring-boot-app/Dockerfile \
+                              --context=dir://java-maven-sonar-argocd-helm-k8s/spring-boot-app \
+                              --destination=${DOCKER_IMAGE}
+                        '''
                     }
                 }
             }
@@ -101,14 +104,14 @@ spec:
         stage('Update Deployment File') {
             steps {
                 withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
-                    sh """
-                    git config user.email "fasilmubarak07@gmail.com"
-                    git config user.name "Fasil Mubarak"
-                    sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-                    git add java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-                    git commit -m "Update deployment image to version ${BUILD_NUMBER}" || echo "No changes to commit"
-                    git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
-                    """
+                    sh '''
+                        git config user.email "fasilmubarak07@gmail.com"
+                        git config user.name "Fasil Mubarak"
+                        sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+                        git add java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+                        git commit -m "Update deployment image to version ${BUILD_NUMBER}" || echo "No changes to commit"
+                        git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
+                    '''
                 }
             }
         }
