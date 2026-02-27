@@ -8,7 +8,7 @@ kind: Pod
 spec:
   containers:
   - name: maven
-    image: abhishekf5/maven-abhishek-docker-agent:v1
+    image: maven:3.9.6-eclipse-temurin-17
     command:
     - cat
     tty: true
@@ -35,7 +35,6 @@ spec:
     stage('Checkout') {
       steps {
         echo "Checkout Stage"
-        // git branch: 'main', url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
       }
     }
 
@@ -43,7 +42,6 @@ spec:
       steps {
         container('maven') {
           sh '''
-            ls -ltr
             cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
             mvn clean package
           '''
@@ -60,9 +58,11 @@ spec:
           withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
             sh '''
               cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
-              mvn sonar:sonar \
-                -Dsonar.login=$SONAR_AUTH_TOKEN \
-                -Dsonar.host.url=${SONAR_URL}
+              
+              mvn clean verify \
+              org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar \
+              -Dsonar.login=$SONAR_AUTH_TOKEN \
+              -Dsonar.host.url=${SONAR_URL}
             '''
           }
         }
