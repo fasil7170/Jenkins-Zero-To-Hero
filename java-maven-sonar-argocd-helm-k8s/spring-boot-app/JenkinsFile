@@ -28,18 +28,12 @@ spec:
         DOCKER_IMAGE = "fazil2664/ultimate-cicd:${BUILD_NUMBER}"
     }
 
-    options {
-        buildDiscarder(logRotator(daysToKeepStr: '30', numToKeepStr: '10'))
-        timeout(time: 60, unit: 'MINUTES')
-        ansiColor('xterm')
-    }
-
     stages {
 
         stage('Checkout') {
             steps {
-                echo "Checking out code..."
-                checkout scm
+                echo "Code checkout done"
+                // git branch: 'main', url: 'https://github.com/fasil7170/Jenkins-Zero-To-Hero.git'
             }
         }
 
@@ -48,7 +42,7 @@ spec:
                 container('maven') {
                     sh '''
                         cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
-                        mvn clean package -B
+                        mvn clean package
                     '''
                 }
             }
@@ -106,14 +100,14 @@ spec:
                 container('maven') {
                     withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
                         sh '''
-                            git config user.email "rkftrip@gmail.com"
-                            git config user.name "fazil Ahamed"
+                            git config user.email "fasilmubarak07@gmail.com"
+                            git config user.name "fasil7170"
 
                             sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" \
                             java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
 
                             git add .
-                            git commit -m "Update image to ${BUILD_NUMBER}" || echo "No changes to commit"
+                            git commit -m "Update image to ${BUILD_NUMBER}"
                             git push https://${GITHUB_TOKEN}@github.com/fasil7170/Jenkins-Zero-To-Hero HEAD:main
                         '''
                     }
@@ -121,26 +115,5 @@ spec:
             }
         }
 
-    }
-
-    post {
-        always {
-            node {
-                echo 'Cleaning workspace...'
-                deleteDir() // safe alternative to cleanWs()
-            }
-        }
-        success {
-            echo '✅ Build, test, and deployment update succeeded!'
-        }
-        failure {
-            echo '❌ Build failed!'
-        }
-        unstable {
-            echo '⚠️ Build is unstable!'
-        }
-        changed {
-            echo 'ℹ️ Build status changed!'
-        }
     }
 }
