@@ -18,7 +18,7 @@ pipeline {
             }
         }
 
-        stage('Build, Test, and Docker Build') {
+        stage('Build, Test, Sonar & Docker') {
             agent {
                 kubernetes {
                     yaml """
@@ -45,13 +45,13 @@ spec:
                 container('maven-docker') {
                     dir('/workspace') {
                         script {
-                            // 1️⃣ Build JAR
+                            // 1️⃣ Build Spring Boot JAR
                             sh """
                             cd ${APP_DIR}
                             mvn clean package -DskipTests
                             """
 
-                            // 2️⃣ Run SonarQube Analysis
+                            // 2️⃣ Run SonarQube analysis
                             withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
                                 sh """
                                 cd ${APP_DIR}
