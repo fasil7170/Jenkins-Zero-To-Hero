@@ -1,21 +1,5 @@
 pipeline {
-    agent {
-        kubernetes {
-            yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: maven
-    image: maven:3.9.3-eclipse-temurin-17
-    command: ["cat"]   # keeps Maven container alive
-    tty: true
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:latest
-    imagePullPolicy: IfNotPresent
-"""
-        }
-    }
+    agent any
 
     environment {
         SONAR_URL = "http://192.168.0.100:9000"
@@ -33,6 +17,20 @@ spec:
         }
 
         stage('Build and Test') {
+            agent {
+                kubernetes {
+                    yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: maven
+    image: maven:3.9.3-eclipse-temurin-17
+    command: ["cat"]       # keeps Maven container alive for Jenkins
+    tty: true
+"""
+                }
+            }
             steps {
                 container('maven') {
                     dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
@@ -43,11 +41,25 @@ spec:
         }
 
         stage('Static Code Analysis') {
+            agent {
+                kubernetes {
+                    yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: maven
+    image: maven:3.9.3-eclipse-temurin-17
+    command: ["cat"]
+    tty: true
+"""
+                }
+            }
             steps {
                 container('maven') {
                     withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
                         dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
-                            sh "mvn sonar:sonar -Dsonar.login=\$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}"
+                            sh "mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}"
                         }
                     }
                 }
@@ -55,6 +67,19 @@ spec:
         }
 
         stage('Build and Push Docker Image') {
+            agent {
+                kubernetes {
+                    yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:latest
+    imagePullPolicy: IfNotPresent
+"""
+                }
+            }
             steps {
                 container('kaniko') {
                     withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
