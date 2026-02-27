@@ -27,9 +27,6 @@ spec:
   containers:
   - name: maven
     image: maven:3.9.3-eclipse-temurin-17
-    command:
-      - cat
-    tty: true
 """
                 }
             }
@@ -52,9 +49,6 @@ spec:
   containers:
   - name: maven
     image: maven:3.9.3-eclipse-temurin-17
-    command:
-      - cat
-    tty: true
 """
                 }
             }
